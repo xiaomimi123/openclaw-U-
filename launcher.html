@@ -1,0 +1,1050 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>OpenClaw USB 启动器</title>
+<link rel="stylesheet" href="styles/common.css">
+<style>
+/* launcher.html 页面特有样式 */
+
+/* ── Main ── */
+.main { padding:24px 40px 20px; height:calc(100vh - 40px); display:flex; flex-direction:column; gap:14px; }
+
+/* ── Header ── */
+.header { text-align:center; }
+.header h1 { font-size:22px; }
+.header p { font-size:12px; color:#6b6b8a; margin-top:4px; }
+
+/* ── Status card ── */
+.status-card {
+  background:#141425; border:1px solid #1e1e35; border-radius:12px;
+  padding:16px 20px; display:flex; align-items:center; gap:14px;
+}
+.status-dot {
+  width:14px; height:14px; border-radius:50%; flex-shrink:0;
+  background:#454560; transition:background .3s;
+  box-shadow: 0 0 0 0 rgba(78,205,196,0);
+}
+.status-dot.running {
+  background:#4ecdc4;
+  animation: pulse-green 2s infinite;
+}
+.status-dot.starting { background:#ffaa44; animation: pulse-yellow 1s infinite; }
+.status-dot.error    { background:#e74856; }
+@keyframes pulse-green  { 0%,100%{box-shadow:0 0 0 0 rgba(78,205,196,.4)}  50%{box-shadow:0 0 0 8px rgba(78,205,196,0)} }
+@keyframes pulse-yellow { 0%,100%{box-shadow:0 0 0 0 rgba(255,170,68,.4)} 50%{box-shadow:0 0 0 8px rgba(255,170,68,0)} }
+
+.status-text h3 { font-size:14px; font-weight:600; color:#e8e0e0; }
+.status-text p  { font-size:12px; color:#6b6b8a; margin-top:2px; }
+
+/* ── Info row ── */
+.info-row {
+  display:grid; grid-template-columns:1fr 1fr 1fr; gap:8px;
+}
+.info-item {
+  background:#141425; border:1px solid #1e1e35; border-radius:8px;
+  padding:10px 14px;
+}
+.info-item .label { font-size:10px; color:#6b6b8a; margin-bottom:3px; }
+.info-item .value { font-size:12px; color:#e8e0e0; font-weight:500; }
+
+/* ── USB status ── */
+.usb-bar {
+  display:flex; align-items:center; gap:8px;
+  background:#141425; border:1px solid #1e1e35; border-radius:8px;
+  padding:8px 14px; font-size:12px;
+}
+.usb-bar .label { color:#6b6b8a; flex:1; }
+.usb-bar .value { color:#4ecdc4; font-weight:600; }
+.usb-bar.warn .value { color:#ffaa44; }
+
+/* ── Log area ── */
+.log-wrap { flex:1; display:flex; flex-direction:column; gap:6px; min-height:0; }
+.log-header {
+  display:flex; align-items:center; justify-content:space-between;
+  font-size:12px; color:#6b6b8a;
+}
+.log-area {
+  flex:1; background:#08081a; border:1px solid #1e1e35; border-radius:8px;
+  padding:10px 12px; overflow-y:auto; overflow-x:hidden;
+  font-family:'Consolas','Courier New',monospace; font-size:11px;
+  line-height:1.6; color:#7a7a9a; word-break:break-all; white-space:pre-wrap;
+  min-height:0; user-select:text; cursor:text;
+}
+/* scrollbar 样式继承自 common.css */
+.log-line.ok   { color:#4ecdc4; }
+.log-line.err  { color:#e74856; }
+.log-line.warn { color:#ffaa44; }
+.log-line.info { color:#e74856; }
+
+/* ── Buttons ── */
+.btn-row { display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
+.btn {
+  padding:9px 22px; border:none; border-radius:8px;
+  font-size:13px; font-weight:600; cursor:pointer;
+  transition:all .2s; font-family:inherit;
+  display:flex; align-items:center; gap:6px;
+}
+.btn:disabled { opacity:.4; cursor:not-allowed; }
+.btn-start   { background:linear-gradient(135deg,#4ecdc4,#2eaa9e); color:#0b0b1a; }
+.btn-start:hover:not(:disabled)   { transform:translateY(-1px); box-shadow:0 4px 16px rgba(78,205,196,.4); }
+.btn-stop    { background:linear-gradient(135deg,#e74856,#c92a3a); color:#fff; }
+.btn-stop:hover:not(:disabled)    { transform:translateY(-1px); box-shadow:0 4px 16px rgba(231,72,86,.4); }
+.btn-secondary { background:transparent; color:#4ecdc4; border:1px solid rgba(78,205,196,.4); }
+.btn-secondary:hover:not(:disabled) { background:rgba(78,205,196,.08); border-color:#4ecdc4; }
+.btn-danger  { background:transparent; color:#e74856; border:1px solid #e74856; }
+.btn-danger:hover:not(:disabled) { background:rgba(231,72,86,.08); }
+.btn-ui { background:linear-gradient(135deg,#e74856,#c92a3a); color:#fff; }
+.btn-ui:hover:not(:disabled) { transform:translateY(-1px); box-shadow:0 4px 16px rgba(231,72,86,.4); }
+.btn-repair { background:linear-gradient(135deg,#ffaa44,#e68a00); color:#0b0b1a; }
+.btn-repair:hover:not(:disabled) { transform:translateY(-1px); box-shadow:0 4px 16px rgba(255,170,68,.4); }
+
+.spinner { width:12px; height:12px; }
+/* spin 动画继承自 common.css */
+
+/* overlay 样式继承自 common.css */
+
+/* ── Preflight ── */
+.preflight {
+  background:#141425; border:1px solid #1e1e35; border-radius:8px;
+  padding:10px 14px; transition:all .3s;
+}
+.preflight-title { font-size:11px; color:#535370; margin-bottom:6px; letter-spacing:.5px; text-transform:uppercase; }
+.preflight-list { display:flex; flex-direction:column; gap:3px; }
+.preflight-item {
+  display:flex; align-items:center; gap:8px; font-size:12px;
+  padding:2px 0;
+}
+.preflight-item .pi-icon { width:16px; flex-shrink:0; font-size:11px; text-align:center; }
+.preflight-item .pi-label { color:#e8e0e0; flex:1; }
+.preflight-item .pi-detail { font-size:11px; color:#535370; text-align:right; }
+.preflight-item.pf-ok    .pi-detail { color:#4ecdc4; }
+.preflight-item.pf-warn  .pi-detail { color:#ffaa44; }
+.preflight-item.pf-err   .pi-detail { color:#e74856; }
+.preflight-item.pf-pending .pi-detail { color:#535370; }
+
+/* .hidden 继承自 common.css */
+
+/* ── WeChat ClawBot bar ── */
+.weixin-bar {
+  display:flex; align-items:center; gap:10px;
+  background:#141425; border:1px solid #1e1e35; border-radius:8px;
+  padding:8px 14px;
+}
+.weixin-bar .wx-icon { font-size:18px; flex-shrink:0; }
+.weixin-bar .wx-label { font-size:12px; color:#e8e0e0; font-weight:500; flex:1; }
+.weixin-bar .wx-status { font-size:11px; color:#6b6b8a; }
+.btn-weixin {
+  padding:5px 14px !important; font-size:12px !important;
+  background:linear-gradient(135deg,#07c160,#059e4f); color:#fff;
+}
+.btn-weixin:hover:not(:disabled) { transform:translateY(-1px); box-shadow:0 3px 10px rgba(7,193,96,.4); }
+</style>
+</head>
+<body>
+
+<div class="titlebar">
+  <div class="titlebar-title">
+    <span>🦞</span>
+    <span>OpenClaw U盘版</span>
+    <span id="ver-badge" style="font-size:11px;color:#454560;margin-left:4px"></span>
+  </div>
+  <div class="titlebar-controls">
+    <button class="titlebar-btn btn-minimize" onclick="window.usb.minimize()"></button>
+    <button class="titlebar-btn btn-close"    onclick="window.usb.close()"></button>
+  </div>
+</div>
+
+<div class="main">
+
+  <div class="header">
+    <h1 class="gradient-title">🦞 OpenClaw U盘版</h1>
+    <p>您的 AI 助手 · 数据仅存 U 盘 · 拔出即停止</p>
+  </div>
+
+  <!-- Status -->
+  <div class="status-card">
+    <div class="status-dot starting" id="status-dot"></div>
+    <div class="status-text">
+      <h3 id="status-title">正在启动...</h3>
+      <p  id="status-desc">正在加载 OpenClaw，请稍候</p>
+    </div>
+  </div>
+
+  <!-- Info row -->
+  <div class="info-row">
+    <div class="info-item">
+      <div class="label">AI 模型</div>
+      <div class="value" id="info-model">—</div>
+    </div>
+    <div class="info-item">
+      <div class="label">聊天工具</div>
+      <div class="value" id="info-chat">—</div>
+    </div>
+    <div class="info-item">
+      <div class="label">U 盘状态</div>
+      <div class="value" id="info-usb">✅ 已连接</div>
+    </div>
+  </div>
+
+  <!-- WeChat ClawBot -->
+  <div class="weixin-bar" id="weixin-bar">
+    <span class="wx-icon">💬</span>
+    <span class="wx-label">微信 ClawBot</span>
+    <span class="wx-status" id="weixin-status-text">检查中...</span>
+    <button class="btn btn-weixin hidden" id="btn-weixin-install" onclick="installWeixinPlugin()">安装插件</button>
+    <button class="btn btn-weixin hidden" id="btn-weixin-login" onclick="loginWeixinChannel()">扫码连接</button>
+    <button class="btn btn-secondary hidden" id="btn-weixin-update" onclick="updateWeixinPlugin()" style="padding:5px 12px !important;font-size:11px !important">更新插件</button>
+  </div>
+
+  <!-- Preflight checks -->
+  <div class="preflight" id="preflight-section">
+    <div class="preflight-title">启动检查</div>
+    <div class="preflight-list" id="preflight-list">
+      <div class="preflight-item pf-pending" id="pre-node">
+        <span class="pi-icon">·</span><span class="pi-label">Node.js 运行环境</span><span class="pi-detail">检查中...</span>
+      </div>
+      <div class="preflight-item pf-pending" id="pre-openclaw">
+        <span class="pi-icon">·</span><span class="pi-label">OpenClaw 程序文件</span><span class="pi-detail">检查中...</span>
+      </div>
+      <div class="preflight-item pf-pending" id="pre-port">
+        <span class="pi-icon">·</span><span class="pi-label">端口 18789</span><span class="pi-detail">检查中...</span>
+      </div>
+      <div class="preflight-item pf-pending" id="pre-config">
+        <span class="pi-icon">·</span><span class="pi-label">网关配置</span><span class="pi-detail">检查中...</span>
+      </div>
+      <div class="preflight-item pf-pending" id="pre-disk">
+        <span class="pi-icon">·</span><span class="pi-label">U 盘剩余空间</span><span class="pi-detail">检查中...</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Log area -->
+  <div class="log-wrap">
+    <div class="log-header">
+      <span>运行日志</span>
+      <span style="cursor:pointer;color:#454560" onclick="clearLog()">清空</span>
+    </div>
+    <div class="log-area" id="log-area">
+      <div class="log-line info">--- OpenClaw U盘版启动日志 ---</div>
+    </div>
+  </div>
+
+  <!-- Buttons -->
+  <div class="btn-row">
+    <button class="btn btn-stop hidden" id="btn-stop" onclick="stopOpenclaw()">⏹ 停止</button>
+    <button class="btn btn-start hidden" id="btn-start" onclick="startOpenclaw()">▶ 重新启动</button>
+    <button class="btn btn-ui hidden" id="btn-ui" onclick="openUI()">🌐 打开界面</button>
+    <button class="btn btn-repair" id="btn-repair" onclick="repairAndRestart()">🔧 一键修复</button>
+    <button class="btn btn-secondary" id="btn-apikey" onclick="openApiKeyModal()">🔑 修改 API Key</button>
+
+    <button class="btn btn-secondary" onclick="window.usb.openExternal('https://my.feishu.cn/wiki/ICDbwlmobirpgqkbHY3c8q00nbf?from=from_copylink')" style="margin-left:auto">📖 教学与售后</button>
+  </div>
+
+</div>
+
+<!-- API Key Modal -->
+<div class="overlay" id="modal-apikey">
+  <div style="background:#141425;border:1px solid #1e1e35;border-radius:12px;padding:24px;width:400px;display:flex;flex-direction:column;gap:14px;">
+    <h3 style="font-size:15px;color:#e8e0e0">🔑 修改 API Key</h3>
+    <div style="display:flex;flex-direction:column;gap:4px">
+      <label style="font-size:11px;color:#6b6b8a">AI 服务商</label>
+      <select id="modal-provider-select" onchange="onModalProviderChange()"
+        style="background:#0e0e1e;border:1px solid #252540;border-radius:6px;padding:8px 12px;color:#e8e0e0;font-size:13px;outline:none;font-family:inherit;cursor:pointer">
+        <option value="deepseek">DeepSeek Chat</option>
+        <option value="qwen">通义千问 (DashScope)</option>
+        <option value="glm">智谱 GLM (Z.AI)</option>
+        <option value="volcengine">豆包 (火山引擎)</option>
+        <option value="custom">自定义接入 (Claude/GPT 等)</option>
+      </select>
+    </div>
+    <div style="display:flex;flex-direction:column;gap:4px">
+      <label id="modal-key-label" style="font-size:11px;color:#6b6b8a">API Key</label>
+      <div style="display:flex;gap:6px">
+        <input type="password" id="modal-key-input"
+          style="flex:1;background:#0e0e1e;border:1px solid #252540;border-radius:6px;padding:8px 12px;color:#e8e0e0;font-size:13px;outline:none;font-family:inherit"
+          placeholder="输入新的 API Key">
+        <button onclick="toggleModalVis()" style="background:#1e1e35;border:none;border-radius:6px;padding:0 10px;color:#7a7a9a;cursor:pointer;font-size:13px">👁</button>
+      </div>
+    </div>
+    <div id="modal-custom-fields" style="display:none;flex-direction:column;gap:10px">
+      <div style="display:flex;flex-direction:column;gap:4px">
+        <label style="font-size:11px;color:#6b6b8a">API Base URL</label>
+        <input type="text" id="modal-base-url"
+          style="width:100%;box-sizing:border-box;background:#0e0e1e;border:1px solid #252540;border-radius:6px;padding:8px 12px;color:#e8e0e0;font-size:13px;outline:none;font-family:inherit"
+          placeholder="https://your-api-provider.com/v1">
+      </div>
+      <div style="display:flex;flex-direction:column;gap:4px">
+        <label style="font-size:11px;color:#6b6b8a">模型 ID</label>
+        <input type="text" id="modal-model-id"
+          style="width:100%;box-sizing:border-box;background:#0e0e1e;border:1px solid #252540;border-radius:6px;padding:8px 12px;color:#e8e0e0;font-size:13px;outline:none;font-family:inherit"
+          placeholder="如 gpt-4o、claude-sonnet-4-6">
+      </div>
+    </div>
+    <div style="display:flex;gap:10px;justify-content:flex-end">
+      <button class="btn btn-secondary" onclick="closeApiKeyModal()">取消</button>
+      <button class="btn btn-ui" onclick="submitApiKey()">确认更新</button>
+    </div>
+  </div>
+</div>
+
+<!-- WeChat Login Modal -->
+<div class="overlay" id="modal-weixin-login">
+  <div style="background:#0e0e1e;border:1px solid #1e1e35;border-radius:12px;padding:20px;width:680px;display:flex;flex-direction:column;gap:12px;">
+    <div style="display:flex;align-items:center;justify-content:space-between">
+      <h3 style="font-size:14px;color:#e8e0e0">💬 微信扫码连接</h3>
+      <span id="weixin-login-status" style="font-size:11px;color:#f39c12">等待二维码...</span>
+    </div>
+    <div id="weixin-login-output"
+      style="background:#08081a;border:1px solid #1e1e35;border-radius:6px;
+             padding:10px 12px;height:500px;overflow:auto;
+             font-family:Consolas,'Courier New',monospace;font-size:7.5px;
+             color:#cccccc;line-height:1.1;white-space:pre;">
+    </div>
+    <div style="font-size:11px;color:#535370">用微信扫描上方二维码，扫码成功后窗口会自动提示。</div>
+    <div style="display:flex;gap:10px;justify-content:flex-end">
+      <button class="btn btn-secondary" onclick="closeWeixinLoginModal()">关闭</button>
+      <button class="btn btn-ui hidden" id="btn-weixin-restart" onclick="closeWeixinLoginModal(true)">✅ 扫码完成，重启 OpenClaw</button>
+    </div>
+  </div>
+</div>
+
+<!-- WeChat Plugin Update Modal -->
+<div class="overlay" id="modal-weixin-update">
+  <div style="background:#0e0e1e;border:1px solid #1e1e35;border-radius:12px;padding:20px;width:520px;display:flex;flex-direction:column;gap:12px;">
+    <div style="display:flex;align-items:center;justify-content:space-between">
+      <h3 style="font-size:14px;color:#e8e0e0">🔄 更新微信 ClawBot 插件</h3>
+      <span id="weixin-update-status" style="font-size:11px;color:#f39c12">正在连接...</span>
+    </div>
+    <div id="weixin-update-output"
+      style="background:#08081a;border:1px solid #1e1e35;border-radius:6px;
+             padding:10px 12px;height:260px;overflow-y:auto;
+             font-family:Consolas,'Courier New',monospace;font-size:11px;
+             color:#cccccc;line-height:1.4;white-space:pre-wrap;word-break:break-all;">
+    </div>
+    <div style="font-size:11px;color:#535370">由 OpenClaw 自动从 npm 拉取最新版本，完成后无需重新扫码。</div>
+    <div style="display:flex;gap:10px;justify-content:flex-end">
+      <button class="btn btn-secondary" id="btn-weixin-update-close" onclick="closeWeixinUpdateModal()">关闭</button>
+    </div>
+  </div>
+</div>
+
+<!-- Support / License Info Modal -->
+<div class="overlay" id="modal-support">
+  <div style="background:#141425;border:1px solid #1e1e35;border-radius:12px;padding:24px;width:420px;display:flex;flex-direction:column;gap:14px;">
+    <h3 style="font-size:15px;color:#e8e0e0">📋 授权信息（售后专用）</h3>
+    <div style="font-size:11px;color:#535370;line-height:1.6">
+      将以下信息发送给客服，用于核验授权并获取更新文件。
+    </div>
+    <div id="support-info-box"
+      style="background:#0a0a1a;border:1px solid #1e1e35;border-radius:8px;padding:12px 14px;
+             font-family:Consolas,monospace;font-size:12px;color:#9a8aaa;line-height:2;
+             user-select:all;cursor:text;">
+      读取中...
+    </div>
+    <div style="font-size:11px;color:#535370">
+      ⬆ 点击上方文字框可全选，然后 Ctrl+C 复制
+    </div>
+    <div style="display:flex;gap:10px;justify-content:flex-end">
+      <button class="btn btn-secondary" onclick="closeSupportModal()">关闭</button>
+      <button class="btn btn-ui" onclick="copySupportInfo(this)">📋 一键复制</button>
+    </div>
+  </div>
+</div>
+
+<!-- USB removed overlay -->
+<div class="overlay" id="usb-overlay">
+  <div style="font-size:52px">🔌</div>
+  <h2>U 盘已拔出</h2>
+  <p>检测到 U 盘被移除，OpenClaw 即将退出<br>
+     所有对话和配置已安全保存在 U 盘中</p>
+</div>
+
+<script>
+const MODEL_LABELS = {
+  anthropic:   'Claude (Anthropic)',
+  openai:      'OpenAI GPT-4o',
+  deepseek:    'DeepSeek Chat',
+  qwen:        '通义千问 Max',
+  glm:         '智谱 GLM-4',
+  volcengine:  '豆包 (火山引擎)',
+  custom:      '自定义接入'
+}
+const CHAT_LABELS = {
+  telegram: 'Telegram',
+  weixin:   '微信 ClawBot',
+  feishu:   '飞书 (Feishu)',
+  none:     '暂未接入'
+}
+
+let isRunning = false
+let uiUrl = null
+let uiOpened = false
+let networkRetryCount = 0
+let _autoKillingPort = false
+const MAX_NETWORK_RETRY = 2
+
+function log(msg, cls = '') {
+  const area = document.getElementById('log-area')
+  const line = document.createElement('div')
+  line.className = 'log-line' + (cls ? ' ' + cls : '')
+  const lower = msg.toLowerCase()
+  if (!cls) {
+    if (lower.includes('error') || lower.includes('fail') || lower.includes('err ') || lower.includes('失败'))
+      line.className = 'log-line err'
+    else if (lower.includes('warn') || lower.includes('warning'))
+      line.className = 'log-line warn'
+    else if (lower.includes('ready') || lower.includes('started') || lower.includes('success') || lower.includes('成功'))
+      line.className = 'log-line ok'
+  }
+  line.textContent = msg.trimEnd()
+  area.appendChild(line)
+  area.scrollTop = area.scrollHeight
+
+}
+
+function clearLog() {
+  document.getElementById('log-area').innerHTML = '<div class="log-line info">--- 日志已清空 ---</div>'
+}
+
+function setStatus(dot, title, desc) {
+  const d = document.getElementById('status-dot')
+  d.className = 'status-dot ' + dot
+  document.getElementById('status-title').textContent = title
+  document.getElementById('status-desc').textContent  = desc
+}
+
+let readyWatchdog = null
+
+function clearReadyWatchdog() {
+  if (readyWatchdog) { clearTimeout(readyWatchdog); readyWatchdog = null }
+  if (window._globalTimeout) { clearTimeout(window._globalTimeout); window._globalTimeout = null }
+}
+
+function onGatewayReady() {
+  clearReadyWatchdog()
+  if (isRunning) return  // already handled
+  isRunning = true
+  networkRetryCount = 0  // 启动成功，重置网络重试计数
+  hidePreflight()
+  setStatus('running', 'OpenClaw 运行中', '已就绪，可在聊天工具中开始对话')
+  document.getElementById('btn-stop').classList.remove('hidden')
+  document.getElementById('btn-ui').classList.remove('hidden')
+  log('OpenClaw 已就绪 ✅', 'ok')
+  if (!uiOpened) {
+    uiOpened = true
+    window.usb.openUiWindow()
+  }
+}
+
+async function startOpenclaw() {
+  uiUrl = null
+  uiOpened = false
+  _autoKillingPort = false
+  clearReadyWatchdog()
+  if (window._gwReadyFallbackTimer) { clearTimeout(window._gwReadyFallbackTimer); window._gwReadyFallbackTimer = null }
+  document.getElementById('btn-ui').classList.add('hidden')
+  document.getElementById('btn-stop').classList.add('hidden')
+  document.getElementById('btn-start').classList.add('hidden')
+
+  // Re-run preflight on manual restart
+  const preSection = document.getElementById('preflight-section')
+  if (preSection) preSection.classList.remove('hidden')
+  // Reset all items to pending
+  for (const id of ['node','openclaw','port','config','disk']) setPreflight(id, 'pending', '检查中...')
+
+  setStatus('starting', '正在检查启动环境...', '请稍候')
+  const preflightOk = await runPreflight()
+  if (!preflightOk) {
+    setStatus('error', '启动准备未通过', '请查看上方检查结果，解决后点击"重新启动"')
+    document.getElementById('btn-start').classList.remove('hidden')
+    return
+  }
+
+  setStatus('starting', '正在启动...', '正在加载 OpenClaw，请稍候')
+  log('启动 OpenClaw gateway...', 'info')
+
+  const r = await window.usb.startOpenclaw()
+  if (!r.ok) {
+    setStatus('error', '启动失败', r.error)
+    log('错误: ' + r.error, 'err')
+    document.getElementById('btn-start').classList.remove('hidden')
+    if (r.needApiKey) openApiKeyModal()
+    return
+  }
+
+  // 30 秒 watchdog：进程还活着但没 ready 信号 → 假定就绪（某些版本不输出 Browser control）
+  readyWatchdog = setTimeout(async () => {
+    readyWatchdog = null
+    if (isRunning) return
+    const status = await window.usb.getOpenclawStatus()
+    if (!status.running) return
+    log('⚠ 未检测到就绪信号，假定已启动', 'warn')
+    onGatewayReady()
+  }, 30000)
+
+  // 60 秒全局超时：进程既没 ready 也没退出 → 提示用户
+  if (window._globalTimeout) clearTimeout(window._globalTimeout)
+  window._globalTimeout = setTimeout(async () => {
+    window._globalTimeout = null
+    if (isRunning) return
+    const status = await window.usb.getOpenclawStatus()
+    if (!status.running) return
+    log('⚠ 启动超过 60 秒仍未就绪，可能是网络较慢', 'warn')
+    log('💡 你可以继续等待，或点击"停止"后重新启动', 'info')
+    setStatus('starting', '启动时间较长', '可能是网络较慢，请耐心等待或重新启动')
+    document.getElementById('btn-stop').classList.remove('hidden')
+    document.getElementById('btn-start').classList.remove('hidden')
+  }, 60000)
+}
+
+function openUI() {
+  window.usb.openUiWindow()
+}
+
+async function stopOpenclaw() {
+  clearReadyWatchdog()
+  await window.usb.stopOpenclaw()
+  isRunning = false
+  setStatus('error', 'OpenClaw 已停止', '点击"重新启动"恢复运行')
+  document.getElementById('btn-stop').classList.add('hidden')
+  document.getElementById('btn-ui').classList.add('hidden')
+  document.getElementById('btn-start').classList.remove('hidden')
+  log('OpenClaw 已停止', 'warn')
+}
+
+async function repairAndRestart() {
+  const btn = document.getElementById('btn-repair')
+  btn.disabled = true
+  btn.textContent = '🔧 修复中...'
+  log('开始一键修复...', 'info')
+
+  // 1. 停止 gateway
+  if (isRunning) {
+    await window.usb.stopOpenclaw()
+    isRunning = false
+    log('已停止 gateway', 'warn')
+    await new Promise(r => setTimeout(r, 800))
+  }
+
+  // 2. 修复配置
+  const r = await window.usb.repairConfig()
+
+  if (r.needsReconfig) {
+    log('⚠ ' + r.error, 'warn')
+    setStatus('error', '需要重新输入 API Key', '配置已重建，请点击"修改 API Key"重新输入')
+    btn.disabled = false
+    btn.textContent = '🔧 一键修复'
+    return
+  }
+
+  if (!r.ok) {
+    log('修复失败: ' + r.error, 'err')
+    btn.disabled = false
+    btn.textContent = '🔧 一键修复'
+    return
+  }
+  log('配置修复成功 ✅', 'ok')
+
+  // 3. 重启 gateway
+  await startOpenclaw()
+
+  btn.disabled = false
+  btn.textContent = '🔧 一键修复'
+}
+
+// ── API Key Modal ──
+const KEY_HINTS = {
+  anthropic:   'Anthropic Claude API Key',
+  openai:      'OpenAI API Key',
+  deepseek:    'DeepSeek API Key',
+  qwen:        'DashScope (通义千问) API Key',
+  glm:         'Z.AI (智谱 GLM) API Key',
+  volcengine:  '火山方舟 API Key',
+  custom:      'API Key'
+}
+
+function onModalProviderChange() {
+  const provider = document.getElementById('modal-provider-select').value
+  document.getElementById('modal-key-label').textContent = KEY_HINTS[provider] || 'API Key'
+  document.getElementById('modal-key-input').value = ''
+  document.getElementById('modal-key-input').placeholder = '输入新的 API Key'
+  // 自定义接入：显示 Base URL + 模型 ID
+  // 火山引擎：只显示模型 ID（Base URL 固定）
+  const customFields = document.getElementById('modal-custom-fields')
+  const baseUrlField = document.getElementById('modal-base-url').parentElement
+  const modelIdInput = document.getElementById('modal-model-id')
+  if (provider === 'custom') {
+    customFields.style.display = 'flex'
+    baseUrlField.style.display = ''
+    modelIdInput.placeholder = '如 gpt-4o、claude-sonnet-4-6'
+  } else if (provider === 'volcengine') {
+    customFields.style.display = 'flex'
+    baseUrlField.style.display = 'none'
+    modelIdInput.placeholder = 'ep-xxxxxxxx（推理接入点 ID）'
+    modelIdInput.value = ''
+  } else {
+    customFields.style.display = 'none'
+  }
+}
+
+async function openApiKeyModal() {
+  const { setup } = await window.usb.getSetupStatus()
+  let provider = setup?.aiProvider || 'deepseek'
+  const select = document.getElementById('modal-provider-select')
+  // 如果之前选的服务商不在下拉列表中（如 anthropic/openai），回退到 custom
+  select.value = provider
+  if (!select.value) { provider = 'custom'; select.value = 'custom' }
+  onModalProviderChange()  // 同步 custom 字段显示状态和 label
+  document.getElementById('modal-key-input').value = ''
+  document.getElementById('modal-base-url').value = ''
+  document.getElementById('modal-model-id').value = ''
+  document.getElementById('modal-apikey').classList.add('show')
+  setTimeout(() => document.getElementById('modal-key-input').focus(), 100)
+}
+
+function closeApiKeyModal() {
+  document.getElementById('modal-apikey').classList.remove('show')
+}
+
+function toggleModalVis() {
+  const el = document.getElementById('modal-key-input')
+  el.type = el.type === 'password' ? 'text' : 'password'
+}
+
+async function submitApiKey() {
+  const key      = document.getElementById('modal-key-input').value.trim()
+  const provider = document.getElementById('modal-provider-select').value
+  if (key.length < 8) { alert('API Key 格式不正确，请重新输入'); return }
+
+  const opts = {}
+  if (provider === 'custom') {
+    opts.baseUrl = document.getElementById('modal-base-url').value.trim()
+    opts.modelId = document.getElementById('modal-model-id').value.trim()
+    if (!opts.baseUrl || !opts.modelId) { alert('自定义接入需要填写 Base URL 和模型 ID'); return }
+  }
+  if (provider === 'volcengine') {
+    opts.modelId = document.getElementById('modal-model-id').value.trim()
+    if (!opts.modelId) { alert('请填写火山引擎的推理接入点 ID（ep-xxxxxxxx）'); return }
+  }
+
+  // 先验证 API Key 是否有效
+  const submitBtn = document.querySelector('#modal-apikey .btn-ui')
+  const origText = submitBtn.textContent
+  submitBtn.disabled = true
+  submitBtn.textContent = '验证中...'
+  try {
+    const v = await window.usb.validateApiKey(key, provider, opts.baseUrl || '')
+    if (!v.ok) {
+      submitBtn.disabled = false
+      submitBtn.textContent = origText
+      const goAhead = confirm(v.error + '\n\n是否仍然保存？（不推荐）')
+      if (!goAhead) return
+    }
+  } catch (e) {
+    // 验证异常（网络断开等），提示但不阻塞
+    submitBtn.disabled = false
+    submitBtn.textContent = origText
+    const goAhead = confirm('无法验证 API Key（' + (e.message || '网络异常') + '）\n\n是否仍然保存？')
+    if (!goAhead) return
+  }
+  submitBtn.disabled = false
+  submitBtn.textContent = origText
+
+  submitBtn.textContent = '保存中...'
+  submitBtn.disabled = true
+  const r = await window.usb.updateApiKey(key, provider, opts)
+  if (!r.ok) {
+    submitBtn.disabled = false
+    submitBtn.textContent = origText
+    alert('更新失败: ' + r.error)
+    return
+  }
+
+  closeApiKeyModal()
+  document.getElementById('info-model').textContent = MODEL_LABELS[provider] || provider
+  log('✅ API Key 已更新（' + (MODEL_LABELS[provider] || provider) + '）', 'ok')
+
+  if (isRunning) {
+    log('正在重启以应用新配置...', 'info')
+    await stopOpenclaw()
+    await new Promise(r => setTimeout(r, 1000))
+    await startOpenclaw()
+  }
+}
+
+// ── Preflight ──
+const PF_ICONS = { ok: '✅', warn: '⚠', err: '❌', pending: '·' }
+
+function setPreflight(id, state, detail) {
+  const el = document.getElementById('pre-' + id)
+  if (!el) return
+  el.className = 'preflight-item pf-' + state
+  el.querySelector('.pi-icon').textContent = PF_ICONS[state] || '·'
+  el.querySelector('.pi-detail').textContent = detail
+}
+
+async function runPreflight() {
+  let hasError = false
+  let results
+  try {
+    results = await window.usb.preflightCheck()
+  } catch (e) {
+    log('环境检查失败: ' + e.message, 'warn')
+    return true // don't block startup on check failure
+  }
+
+  for (const r of results) {
+    const state = r.ok ? (r.warn ? 'warn' : 'ok') : 'err'
+    setPreflight(r.id, state, r.detail)
+    if (!r.ok && !r.warn) {
+      hasError = true
+      log('❌ [环境检查] ' + r.label + ': ' + r.detail, 'err')
+    } else if (r.warn) {
+      // 端口占用：自动尝试释放
+      if (r.id === 'port') {
+        log('⚠ [环境检查] 端口 18789 被占用，正在自动释放...', 'warn')
+        const killResult = await window.usb.killPort(18789)
+        if (killResult.ok) {
+          log('✅ 端口已释放', 'ok')
+          setPreflight('port', 'ok', '端口已自动释放')
+        } else {
+          hasError = true
+          setPreflight('port', 'err', killResult.error || r.detail)
+          log('❌ [环境检查] ' + (killResult.error || r.detail), 'err')
+        }
+      } else {
+        log('⚠ [环境检查] ' + r.label + ': ' + r.detail, 'warn')
+      }
+    }
+  }
+
+  return !hasError
+}
+
+async function autoKillPort() {
+  try {
+    const result = await window.usb.killPort(18789)
+    _autoKillingPort = false
+    if (result.ok) {
+      log('✅ 端口已自动释放，正在重新启动...', 'ok')
+      setStatus('starting', '端口已释放', '正在重新启动...')
+      setTimeout(() => startOpenclaw(), 1000)
+    } else {
+      log('⚠ ' + (result.error || '无法自动释放端口'), 'err')
+      setStatus('error', '端口被占用', result.error || '请手动关闭占用端口的程序后重新启动')
+      document.getElementById('btn-start').classList.remove('hidden')
+    }
+  } catch (e) {
+    _autoKillingPort = false
+    log('⚠ 释放端口失败: ' + e.message, 'err')
+    setStatus('error', '端口被占用', '请手动关闭占用端口的程序后重新启动')
+    document.getElementById('btn-start').classList.remove('hidden')
+  }
+}
+
+function hidePreflight() {
+  const el = document.getElementById('preflight-section')
+  if (el) el.classList.add('hidden')
+}
+
+// ── Support Modal ──
+async function openSupportModal() {
+  document.getElementById('support-info-box').textContent = '读取中...'
+  document.getElementById('modal-support').classList.add('show')
+  try {
+    const info = await window.usb.getLicenseInfo()
+    document.getElementById('support-info-box').textContent =
+      `版本号:  v${info.version}\n` +
+      `U盘序列号:  ${info.serial}\n` +
+      `平台:  ${info.platform} / ${info.arch}`
+  } catch (e) {
+    document.getElementById('support-info-box').textContent = '读取失败: ' + e.message
+  }
+}
+
+function closeSupportModal() {
+  document.getElementById('modal-support').classList.remove('show')
+}
+
+function copySupportInfo(btn) {
+  const text = document.getElementById('support-info-box').textContent
+  navigator.clipboard.writeText(text).then(() => {
+    btn.textContent = '✅ 已复制'
+    setTimeout(() => { btn.textContent = '📋 一键复制' }, 2000)
+  })
+}
+
+// ── WeChat ClawBot ──
+async function refreshWeixinStatus() {
+  const statusEl    = document.getElementById('weixin-status-text')
+  const installBtn  = document.getElementById('btn-weixin-install')
+  const loginBtn    = document.getElementById('btn-weixin-login')
+  try {
+    const { installed } = await window.usb.getWeixinStatus()
+    const updateBtn = document.getElementById('btn-weixin-update')
+    if (installed) {
+      statusEl.textContent = '已安装'
+      statusEl.style.color = '#4ecdc4'
+      installBtn.classList.add('hidden')
+      loginBtn.classList.remove('hidden')
+      updateBtn.classList.remove('hidden')
+    } else {
+      statusEl.textContent = '未安装'
+      statusEl.style.color = '#666688'
+      installBtn.classList.remove('hidden')
+      loginBtn.classList.add('hidden')
+      updateBtn.classList.add('hidden')
+    }
+  } catch {
+    statusEl.textContent = '检测失败'
+  }
+}
+
+async function installWeixinPlugin() {
+  const btn = document.getElementById('btn-weixin-install')
+  btn.disabled = true
+  btn.innerHTML = '<span class="spinner"></span> 安装中...'
+  log('正在安装微信 ClawBot 插件...', 'info')
+
+  const r = await window.usb.installWeixinPlugin()
+  btn.disabled = false
+  btn.textContent = '安装插件'
+
+  if (!r.ok) {
+    log('❌ 插件安装失败: ' + r.error, 'err')
+    return
+  }
+  log('✅ 微信 ClawBot 插件安装成功！请点击"扫码连接"完成绑定。', 'ok')
+  await refreshWeixinStatus()
+}
+
+async function loginWeixinChannel() {
+  const btn = document.getElementById('btn-weixin-login')
+  btn.disabled = true
+
+  // 打开弹窗，清空上次输出
+  const outputEl = document.getElementById('weixin-login-output')
+  outputEl.textContent = ''
+  document.getElementById('weixin-login-status').textContent = '正在生成二维码...'
+  document.getElementById('weixin-login-status').style.color = '#ffaa44'
+  document.getElementById('btn-weixin-restart').classList.add('hidden')
+  document.getElementById('modal-weixin-login').classList.add('show')
+
+  // 过滤 ANSI 转义码（颜色、清屏、光标移动等控制字符）
+  function stripAnsi(str) {
+    return str
+      .replace(/\x1B\[[0-9;?]*[A-Za-z]/g, '')  // CSI 序列（颜色、光标移动、清屏）
+      .replace(/\x1B[()][AB012]/g, '')           // 字符集切换
+      .replace(/\x1B[=>]/g, '')                  // 其他转义
+      .replace(/\r/g, '')                        // 回车符（\r 单独出现时会覆写行首）
+  }
+
+  // 订阅输出流
+  window.usb.onWeixinLoginOutput(data => {
+    const clean = stripAnsi(data)
+    if (!clean.trim()) return
+    outputEl.textContent += clean
+    outputEl.scrollTop = outputEl.scrollHeight   // 新二维码自动滚到可见区域
+
+    // 检测成功关键词
+    if (clean.includes('成功') || clean.includes('success') || clean.includes('logged in') || clean.includes('connected')) {
+      document.getElementById('weixin-login-status').textContent = '✅ 扫码成功！'
+      document.getElementById('weixin-login-status').style.color = '#4ecdc4'
+      document.getElementById('btn-weixin-restart').classList.remove('hidden')
+    }
+    // 检测二维码刷新关键词（过期重新生成）
+    if (clean.includes('expired') || clean.includes('过期') || clean.includes('refresh') || clean.includes('刷新')) {
+      document.getElementById('weixin-login-status').textContent = '🔄 二维码已刷新，请重新扫码'
+      document.getElementById('weixin-login-status').style.color = '#ffaa44'
+    }
+  })
+
+  window.usb.onWeixinLoginDone(code => {
+    btn.disabled = false
+    if (code === 0) {
+      document.getElementById('weixin-login-status').textContent = '✅ 连接完成'
+      document.getElementById('weixin-login-status').style.color = '#4ecdc4'
+      document.getElementById('btn-weixin-restart').classList.remove('hidden')
+    } else {
+      document.getElementById('weixin-login-status').textContent = '进程已结束 (code ' + code + ')'
+      document.getElementById('weixin-login-status').style.color = '#888aaa'
+    }
+  })
+
+  const r = await window.usb.loginWeixinChannel()
+  if (!r.ok) {
+    document.getElementById('modal-weixin-login').classList.remove('show')
+    btn.disabled = false
+    log('❌ ' + r.error, 'err')
+  }
+}
+
+async function closeWeixinLoginModal(andRestart) {
+  document.getElementById('modal-weixin-login').classList.remove('show')
+  document.getElementById('btn-weixin-login').disabled = false
+  if (andRestart && isRunning) {
+    log('正在重启以激活微信连接...', 'info')
+    await stopOpenclaw()
+    await new Promise(r => setTimeout(r, 1000))
+    await startOpenclaw()
+  }
+}
+
+async function updateWeixinPlugin() {
+  const btn = document.getElementById('btn-weixin-update')
+  btn.disabled = true
+
+  const outputEl = document.getElementById('weixin-update-output')
+  outputEl.textContent = ''
+  const statusEl = document.getElementById('weixin-update-status')
+  statusEl.textContent = '正在更新...'
+  statusEl.style.color = '#ffaa44'
+  document.getElementById('btn-weixin-update-close').disabled = true
+  document.getElementById('modal-weixin-update').classList.add('show')
+
+  function stripAnsi(str) {
+    return str
+      .replace(/\x1B\[[0-9;?]*[A-Za-z]/g, '')
+      .replace(/\x1B[()][AB012]/g, '')
+      .replace(/\x1B[=>]/g, '')
+      .replace(/\r/g, '')
+  }
+
+  window.usb.onWeixinUpdateOutput(data => {
+    const clean = stripAnsi(data)
+    if (!clean.trim()) return
+    outputEl.textContent += clean
+    outputEl.scrollTop = outputEl.scrollHeight
+  })
+
+  window.usb.onWeixinUpdateDone(code => {
+    btn.disabled = false
+    document.getElementById('btn-weixin-update-close').disabled = false
+    if (code === 0) {
+      statusEl.textContent = '✅ 更新成功'
+      statusEl.style.color = '#4ecdc4'
+      log('✅ 微信 ClawBot 插件已更新到最新版本', 'ok')
+    } else {
+      statusEl.textContent = '❌ 更新失败 (code ' + code + ')'
+      statusEl.style.color = '#e74856'
+      log('❌ 插件更新失败，退出码: ' + code, 'err')
+    }
+  })
+
+  const r = await window.usb.updateWeixinPlugin()
+  if (!r.ok) {
+    document.getElementById('modal-weixin-update').classList.remove('show')
+    btn.disabled = false
+    document.getElementById('btn-weixin-update-close').disabled = false
+    log('❌ 插件更新失败: ' + r.error, 'err')
+  }
+}
+
+function closeWeixinUpdateModal() {
+  document.getElementById('modal-weixin-update').classList.remove('show')
+  document.getElementById('btn-weixin-update').disabled = false
+}
+
+// ── Init ──
+async function init() {
+  // 显示版本号
+  window.usb.getVersion().then(v => {
+    document.getElementById('ver-badge').textContent = 'v' + v
+  }).catch(() => {})
+
+  const { setup } = await window.usb.getSetupStatus()
+  if (setup) {
+    document.getElementById('info-model').textContent = MODEL_LABELS[setup.aiProvider] || setup.aiProvider
+    document.getElementById('info-chat').textContent  = CHAT_LABELS[setup.chatTool]   || setup.chatTool
+  }
+
+  refreshWeixinStatus()
+
+  window.usb.onOpenclawLog(msg => {
+    msg.split('\n').forEach(l => {
+      if (!l.trim()) return
+      log(l)
+      // Detect gateway ready — wait for Browser control (HTTP UI), not the WS gateway port
+      if (l.includes('Browser control listening on')) {
+        onGatewayReady()
+      }
+      // Fallback: older versions without separate Browser control port
+      if (l.includes('[gateway] listening on') && !l.includes('Browser control')) {
+        // 延迟触发，给 Browser control 端口一点时间输出
+        if (!window._gwReadyFallbackTimer) {
+          window._gwReadyFallbackTimer = setTimeout(() => {
+            if (!isRunning) onGatewayReady()
+          }, 3000)
+        }
+      }
+      // Detect port conflict（翻译层已处理文本，检测翻译后的关键词 + 原始关键词）
+      if (l.includes('EADDRINUSE') || l.includes('address already in use') || l.includes('端口被占用')) {
+        if (!_autoKillingPort) {
+          _autoKillingPort = true
+          clearReadyWatchdog()
+          setStatus('starting', '正在自动处理', '端口被占用，正在释放...')
+          autoKillPort()
+        }
+      }
+    })
+  })
+
+  // Config invalid 自动修复后由主进程通知前端重启（避免嵌套 spawn 的闭包问题）
+  let autoRestartCount = 0
+  window.usb.onAutoRestart(() => {
+    autoRestartCount++
+    if (autoRestartCount > 2) {
+      log('自动修复多次未成功，请联系售后支持', 'err')
+      setStatus('error', '配置修复失败', '请联系售后支持')
+      document.getElementById('btn-start').classList.remove('hidden')
+      return
+    }
+    setTimeout(() => startOpenclaw(), 500)
+  })
+
+  window.usb.onNetworkRetry(() => {
+    if (networkRetryCount >= MAX_NETWORK_RETRY) return
+    networkRetryCount++
+    log(`🔄 检测到网络超时，3秒后自动重试（第 ${networkRetryCount}/${MAX_NETWORK_RETRY} 次）...`, 'warn')
+    setStatus('starting', '网络超时，自动重试中...', `第 ${networkRetryCount} 次重试，请稍候`)
+    setTimeout(() => startOpenclaw().catch(e => {
+      log('重试失败: ' + e.message, 'err')
+      setStatus('error', '重试失败', '请检查网络后手动重新启动')
+    }), 3000)
+  })
+
+  window.usb.onOpenclawStopped(code => {
+    clearReadyWatchdog()
+    isRunning = false
+    // 如果是网络重试中且还有剩余次数，不显示停止状态（onNetworkRetry 会处理）
+    if (networkRetryCount > 0 && networkRetryCount < MAX_NETWORK_RETRY) return
+    networkRetryCount = 0
+    const stopMsg = code === 0
+      ? { title: 'OpenClaw 已停止', desc: '服务已正常关闭', log: '服务已正常停止' }
+      : { title: 'OpenClaw 异常退出', desc: '点击"重新启动"重试，通常重启即可恢复', log: '服务异常退出，建议重新启动' }
+    setStatus('error', stopMsg.title, stopMsg.desc)
+    document.getElementById('btn-stop').classList.add('hidden')
+    document.getElementById('btn-ui').classList.add('hidden')
+    document.getElementById('btn-start').classList.remove('hidden')
+    log(stopMsg.log, code === 0 ? 'info' : 'warn')
+  })
+  window.usb.onUsbRemoved(() => {
+    document.getElementById('info-usb').textContent = '❌ 已拔出'
+    document.getElementById('usb-overlay').classList.add('show')
+  })
+
+  const preflightOk = await runPreflight()
+  if (!preflightOk) {
+    setStatus('error', '启动准备未通过', '请查看上方检查结果，解决后点击"重新启动"')
+    document.getElementById('btn-start').classList.remove('hidden')
+    return
+  }
+
+  startOpenclaw()
+}
+
+init()
+</script>
+</body>
+</html>

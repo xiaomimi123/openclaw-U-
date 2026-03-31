@@ -1,0 +1,51 @@
+{
+  "name": "openclaw-usb",
+  "version": "1.6.3",
+  "description": "OpenClaw U盘便携版",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "build": "electron-builder --win portable --x64",
+    "test": "node test/log-translate.test.js && node test/config.test.js"
+  },
+  "dependencies": {
+    "yauzl": "~2.10.0"
+  },
+  "devDependencies": {
+    "electron": "^33.4.11",
+    "electron-builder": "^25.1.8"
+  },
+  "build": {
+    "appId": "ai.openclaw.usb",
+    "productName": "OpenClaw USB",
+    "icon": "assets/icon.ico",
+    "win": {
+      "icon": "assets/icon.ico",
+      "target": [
+        {
+          "target": "portable",
+          "arch": ["x64"]
+        }
+      ]
+    },
+    "portable": {
+      "artifactName": "OpenClaw-U盘版.exe"
+    },
+    "files": [
+      "main.js",
+      "src/**",
+      "styles/**",
+      "preload.js",
+      "pet-preload.js",
+      "setup.html",
+      "launcher.html",
+      "pet.html",
+      "assets/**",
+      "assets/weixin-plugin.zip",
+      "node_modules/yauzl/**",
+      "node_modules/buffer-crc32/**",
+      "node_modules/fd-slicer/**",
+      "node_modules/pend/**"
+    ]
+  }
+}
